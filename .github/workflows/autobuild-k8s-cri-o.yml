@@ -17,7 +17,7 @@ env:
   part: ${{ github.event.inputs.part }}
   allBuild: ${{ github.event.inputs.allbuild }}
   registry: ghcr.io
-  repo: jangrui  # fork: image name is $registry/$repo/$IMAGE_KUBE, so repo must be the owner only (jangrui/runtime would give a 3-level name)
+  repo: labring-fix  # org: image name is $registry/$repo/$IMAGE_KUBE, so repo must be the owner only
   sealosPatch: ${{ github.event.inputs.sealosPatch }}
   criType: cri-o
 jobs:
@@ -62,53 +62,3 @@ jobs:
         id: set-versions
         run: .github/scripts/versions/versions.sh
   build-images:
-    name: building
-    needs:
-      - resolve-issue-sealoslatest
-      - resolve-versions-arch
-    runs-on: ubuntu-24.04
-    env:
-      sealoslatest: ${{ needs.resolve-issue-sealoslatest.outputs.sealoslatest }}
-    strategy:
-      matrix: ${{ fromJson(needs.resolve-versions-arch.outputs.matrix) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download tools and sealos
-        run: .github/scripts/download.sh
-
-      - name: Auto build image
-        env:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          arch: ${{ matrix.arch }}
-          kubeVersion: ${{ matrix.version }}
-        run: .github/scripts/kubernetes.sh
-
-  build_manifest:
-    needs:
-      - resolve-issue-sealoslatest
-      - resolve-versions
-      - build-images
-    name: manifest
-    env:
-      sealoslatest: ${{ needs.resolve-issue-sealoslatest.outputs.sealoslatest }}
-    strategy:
-      matrix: ${{ fromJson(needs.resolve-versions.outputs.matrix) }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Download tools and sealos
-        run: .github/scripts/download.sh
-      - name: Manifest Image
-        env:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          version: ${{ matrix.version }}-${{ env.sealoslatest }}
-        run: .github/scripts/manifest.sh ${{ secrets.D_REGISTRY_TOKEN }}
