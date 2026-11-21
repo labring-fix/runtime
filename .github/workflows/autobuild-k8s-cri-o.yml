@@ -16,7 +16,7 @@ on:
 permissions:
   contents: read
   packages: write
-  env:
+env:
   part: ${{ github.event.inputs.part }}
   allBuild: ${{ github.event.inputs.allbuild }}
   registry: ghcr.io
