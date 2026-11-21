@@ -61,7 +61,7 @@ jobs:
           # registry are parsed as positional args ("too many arguments,
           # login takes only 1 argument"). Flags must come BEFORE ghcr.io.
           sudo sealos login -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
-          sudo sealos inspect "ghcr.io/jangrui/kubernetes:${{ inputs.kube_tag }}"
+          sudo sealos inspect "ghcr.io/labring-fix/kubernetes:${{ inputs.kube_tag }}"
 
       - name: 'Stage A prep - remove preinstalled containerd/docker (the image check.sh refuses a host that already has them)'
         run: |
@@ -84,7 +84,7 @@ jobs:
           set -e
           # --single is deprecated in sealos 5.1.2: with no --masters/--nodes
           # it already defaults to single mode, so no flag is needed here.
-          sudo sealos run "ghcr.io/jangrui/kubernetes:${{ inputs.kube_tag }}" --debug
+          sudo sealos run "ghcr.io/labring-fix/kubernetes:${{ inputs.kube_tag }}" --debug
 
       - name: 'Stage A checks - control plane up, node exists (NotReady is EXPECTED without CNI)'
         run: |
