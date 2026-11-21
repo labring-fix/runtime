@@ -11,7 +11,7 @@ readonly IMAGE_HUB_REGISTRY=${registry?}
 readonly IMAGE_HUB_REPO=${repo?}
 readonly IMAGE_HUB_USERNAME=${username?}
 readonly IMAGE_HUB_PASSWORD=${password?}
-readonly IMAGE_CACHE_NAME="ghcr.io/jangrui/cache"
+readonly IMAGE_CACHE_NAME="ghcr.io/labring-fix/cache"
 
 readonly IMAGE_TAG=${version?}
 readonly KUBE_RAW="${IMAGE_TAG%%-*}"
