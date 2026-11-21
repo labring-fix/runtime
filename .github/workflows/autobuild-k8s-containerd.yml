@@ -51,7 +51,7 @@ env:
   part: ${{ inputs.part }}
   allBuild: ${{ inputs.allbuild }}
   registry: ghcr.io
-  repo: jangrui  # fork: image name is built as $registry/$repo/$IMAGE_KUBE (IMAGE_KUBE=kubernetes), so repo must be the owner only. Upstream repo=labring-actions/runtime gives ghcr.io/labring-actions/runtime/kubernetes (org package, allowed for an org). In a personal fork repo=jangrui/kubernetes would give ghcr.io/jangrui/kubernetes/kubernetes (still 3-level, still denied). repo=jangrui gives ghcr.io/jangrui/kubernetes, the 2-level user package matching upstream labring/kubernetes naming.
+  repo: labring-fix  # org: image name is $registry/$repo/$IMAGE_KUBE, giving ghcr.io/labring-fix/kubernetes (2-level, same as upstream labring/kubernetes naming)
   sealosPatch: ${{ inputs.sealosPatch }}
   criType: containerd
   kubeVersion: ${{ inputs.kubeVersion }}
@@ -62,103 +62,3 @@ jobs:
     outputs:
       sealoslatest: ${{ steps.set-sealoslatest.outputs.sealoslatest }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Set sealos LatestVersion
-        id: set-sealoslatest
-        env:
-          SEALOS_VERSION: ${{ inputs.sealosVersion }}
-        run: .github/scripts/versions/versions_sealos.sh
-  resolve-versions-arch:
-    runs-on: ubuntu-24.04
-    needs:
-      - resolve-issue-sealoslatest
-    env:
-      sealoslatest: ${{ needs.resolve-issue-sealoslatest.outputs.sealoslatest }}
-    outputs:
-      matrix: ${{ steps.set-versions.outputs.matrix }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Resolve Versions
-        id: set-versions
-        run: |
-          if [ -n "${{ inputs.kubeVersion }}" ]; then
-            KUBE="${{ inputs.kubeVersion }}"
-            KUBE="${KUBE#v}"
-            echo "matrix={\"include\":[{\"version\":\"$KUBE\",\"arch\":\"amd64\"},{\"version\":\"$KUBE\",\"arch\":\"arm64\"}]}" >> "$GITHUB_OUTPUT"
-          else
-            .github/scripts/versions/versions_arch.sh
-          fi
-  resolve-versions:
-    runs-on: ubuntu-24.04
-    needs:
-      - resolve-issue-sealoslatest
-    env:
-      sealoslatest: ${{ needs.resolve-issue-sealoslatest.outputs.sealoslatest }}
-    outputs:
-      matrix: ${{ steps.set-versions.outputs.matrix }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Resolve Versions
-        id: set-versions
-        run: |
-          if [ -n "${{ inputs.kubeVersion }}" ]; then
-            KUBE="${{ inputs.kubeVersion }}"
-            KUBE="${KUBE#v}"
-            echo "matrix={\"include\":[{\"version\":\"$KUBE\"}]}" >> "$GITHUB_OUTPUT"
-          else
-            .github/scripts/versions/versions.sh
-          fi
-  build-images:
-    name: building
-    needs:
-      - resolve-issue-sealoslatest
-      - resolve-versions-arch
-    runs-on: ubuntu-24.04
-    env:
-      sealoslatest: ${{ needs.resolve-issue-sealoslatest.outputs.sealoslatest }}
-    strategy:
-      matrix: ${{ fromJson(needs.resolve-versions-arch.outputs.matrix) }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download tools and sealos
-        run: .github/scripts/download.sh
-
-      - name: Auto build image
-        env:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          arch: ${{ matrix.arch }}
-          kubeVersion: ${{ matrix.version }}
-        run: .github/scripts/kubernetes.sh
-
-  build_manifest:
-    needs:
-      - resolve-issue-sealoslatest
-      - resolve-versions
-      - build-images
-    name: manifest
-    env:
-      sealoslatest: ${{ needs.resolve-issue-sealoslatest.outputs.sealoslatest }}
-    strategy:
-      matrix: ${{ fromJson(needs.resolve-versions.outputs.matrix) }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-      issues: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Download tools and sealos
-        run: .github/scripts/download.sh
-      - name: Manifest Image
-        env:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          version: ${{ matrix.version }}-${{ env.sealoslatest }}
-        run: .github/scripts/manifest.sh ${{ secrets.D_REGISTRY_TOKEN }}
