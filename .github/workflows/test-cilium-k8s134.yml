@@ -64,7 +64,7 @@ jobs:
         run: |
           set -e
           sudo sealos login -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}" ghcr.io
-          sudo sealos inspect "ghcr.io/jangrui/kubernetes:${{ inputs.kube_tag }}"
+          sudo sealos inspect "ghcr.io/labring-fix/kubernetes:${{ inputs.kube_tag }}"
 
       - name: 'Stage A prep - remove preinstalled containerd/docker (the image check.sh refuses a host that already has them)'
         run: |
@@ -81,7 +81,7 @@ jobs:
       - name: 'Stage A - install cluster from our rootfs image (k8s 1.34)'
         run: |
           set -e
-          sudo sealos run "ghcr.io/jangrui/kubernetes:${{ inputs.kube_tag }}" --debug
+          sudo sealos run "ghcr.io/labring-fix/kubernetes:${{ inputs.kube_tag }}" --debug
 
       - name: 'Stage A checks - control plane up'
         run: |
