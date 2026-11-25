@@ -155,6 +155,19 @@ jobs:
           NODEPORT=$(sudo kubectl get svc nginx-test-svc -o jsonpath='{.spec.ports[0].nodePort}')
           echo "NodePort: $NODEPORT"
           curl -s --max-time 15 "http://127.0.0.1:$NODEPORT" | head -c 200; echo
+          echo "=== DIAGNOSTICS: agent pod status (late, after waits) ==="
+          sudo kubectl -n kube-system get pods -l k8s-app=cilium -o wide || true
+          echo "=== DIAGNOSTICS: agent pod describe (init container states, events) ==="
+          sudo kubectl -n kube-system describe pod -l k8s-app=cilium || true
+          echo "=== DIAGNOSTICS: config init container logs ==="
+          AGENT_POD=$(sudo kubectl -n kube-system get pods -l k8s-app=cilium -o jsonpath='{.items[0].metadata.name}' || true)
+          sudo kubectl -n kube-system logs "$AGENT_POD" -c config --tail=50 || true
+          echo "=== DIAGNOSTICS: agent container logs ==="
+          sudo kubectl -n kube-system logs "$AGENT_POD" -c cilium-agent --tail=50 || true
+          echo "=== DIAGNOSTICS: operator logs ==="
+          sudo kubectl -n kube-system logs -l k8s-app=cilium-operator --tail=30 || true
+          echo "=== DIAGNOSTICS: recent kube-system events ==="
+          sudo kubectl get events -n kube-system --sort-by=.lastTimestamp | tail -n 40 || true
           echo "Stage B checks done"
 
       - name: 'Gate - fail the job if install or checks failed'
