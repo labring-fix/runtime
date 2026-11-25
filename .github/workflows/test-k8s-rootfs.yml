@@ -133,7 +133,23 @@ jobs:
           echo
           echo "Stage B PASSED: CNI works and a workload pod serves traffic"
 
-      - name: Cleanup - reset the cluster
+      # DIAGNOSTIC for the CNI DEL hang follow-up (containerd/containerd#14629,
+      # projectcalico/calico#14696, kubernetes/kubeadm#3341): time the reset and
+      # capture the StopPodSandbox evidence. A clean reset finishes in seconds;
+      # the hang shows as minutes with "StopPodSandbox from runtime service
+      # failed" in the kubelet journal and "failed to destroy network ...
+      # signal: killed" in the reset log.
+      - name: Cleanup - reset the cluster (timed, with hang diagnostics)
         if: always()
         run: |
-          sudo sealos reset --force || true
+          START=$(date +%s)
+          echo "RESET START: $(date -u +%FT%TZ)"
+          sudo sealos reset --force > /tmp/reset.log 2>&1 || true
+          END=$(date +%s)
+          echo "RESET DONE: took $((END-START))s"
+          echo "===== reset.log tail ====="
+          tail -n 40 /tmp/reset.log || true
+          echo "===== kubelet StopPodSandbox failures, reset window ====="
+          sudo journalctl -u kubelet --since "30 minutes ago" --no-pager 2>/dev/null | grep -E "StopPodSandbox|RemovePodSandbox" | tail -n 40 || true
+          echo "===== containerd journal, reset window ====="
+          sudo journalctl -u containerd --since "30 minutes ago" --no-pager 2>/dev/null | grep -E "StopPodSandbox|failed to destroy network|signal: killed" | tail -n 40 || true
