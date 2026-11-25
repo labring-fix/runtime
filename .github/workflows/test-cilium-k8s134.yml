@@ -14,10 +14,13 @@
 # hardcoded kubeProxyReplacement=strict was removed in the org fork, so the
 # trailing kubeProxyReplacement=true is the only value now.
 #
-# Flow: single-node 1.34.13 cluster from our rootfs image (kube-proxy is
-# installed by kubeadm, then removed per the Cilium docs procedure, which
-# is equivalent to the user's kubeadm SkipPhases addon/kube-proxy flow),
-# then the install command, then evidence collection (cilium-config,
+# Flow: single-node 1.34.13 cluster from our rootfs image, installed with
+# the user's exact flow (sealos gen + apply, kube-proxy skipped at install
+# time via InitConfiguration skipPhases addon/kube-proxy) -- NOT the
+# install-then-delete procedure, which leaves IPVS/ipset state behind and
+# is NOT equivalent (user correction 2026-11-26; two runs failed with the
+# cilium-agent pod never becoming Ready under install-then-delete).
+# Then the install command, then evidence collection (cilium-config,
 # node PodCIDR, nginx pod IP + HTTP, NodePort), then a gate step.
 name: test cilium on k8s 1.34
 
@@ -80,10 +83,37 @@ jobs:
             exit 1
           fi
 
-      - name: 'Stage A - install cluster from our rootfs image (k8s 1.34)'
+      - name: 'Stage A - install cluster, skipping kube-proxy at install (gen + apply + skipPhases)'
         run: |
           set -e
-          sudo sealos run "ghcr.io/labring-fix/kubernetes:${{ inputs.kube_tag }}" --debug
+          # sealos apply connects via SSH even for localhost, so stand up sshd + root key auth
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          rm -f /tmp/sealos-ci /tmp/sealos-ci.pub
+          ssh-keygen -t ed25519 -f /tmp/sealos-ci -N "" -q
+          sudo mkdir -p /root/.ssh
+          sudo cp /tmp/sealos-ci.pub /root/.ssh/authorized_keys
+          sudo chmod 700 /root/.ssh
+          sudo chmod 600 /root/.ssh/authorized_keys /tmp/sealos-ci
+          sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+          sudo grep -q "^PermitRootLogin" /etc/ssh/sshd_config || echo "PermitRootLogin prohibit-password" | sudo tee -a /etc/ssh/sshd_config
+          sudo systemctl restart ssh || sudo /usr/sbin/sshd
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 127.0.0.1 >> ~/.ssh/known_hosts 2>/dev/null || true
+          NODE_IP=$(hostname -I | awk '{print $1}')
+          echo "node IP: $NODE_IP"
+          sudo sealos gen "ghcr.io/labring-fix/kubernetes:${{ inputs.kube_tag }}" \
+            --masters "$NODE_IP" \
+            --user root --pk /tmp/sealos-ci \
+            -o Clusterfile
+          echo "=== generated kubeadm docs ==="
+          sudo grep -n "kind: InitConfiguration\|kind: ClusterConfiguration\|kind: JoinConfiguration\|kind: KubeProxyConfiguration\|kind: KubeletConfiguration" Clusterfile || true
+          # user's flow: drop the generated kubeadm docs, append an InitConfiguration
+          # that skips the kube-proxy addon at install time (v1beta4; v1beta3 is gone in 1.37)
+          sudo python3 -c 'import re; t=open("Clusterfile").read(); docs=re.split(r"(?m)^---[ \t]*$",t); keep=[d for d in docs if d.strip() and not re.search(r"(?m)^kind:\s*(InitConfiguration|ClusterConfiguration|JoinConfiguration|KubeProxyConfiguration|KubeletConfiguration)\s*$",d)]; init="apiVersion: kubeadm.k8s.io/v1beta4\nkind: InitConfiguration\nskipPhases:\n  - addon/kube-proxy\n"; open("Clusterfile","w").write("---\n".join(keep).rstrip()+"\n---\n"+init)'
+          echo "=== Clusterfile after patch (kube-proxy skipped at install) ==="
+          sudo cat Clusterfile
+          sudo sealos apply -f Clusterfile --debug
 
       - name: 'Stage A checks - control plane up'
         run: |
@@ -98,17 +128,6 @@ jobs:
             sudo kubectl wait --for=condition=Ready "pod" -n kube-system -l "component=$comp" --timeout=300s
           done
           echo "Stage A PASSED: control plane is up on k8s 1.34"
-
-      - name: 'Remove kube-proxy (Cilium docs procedure for existing clusters)'
-        run: |
-          set -e
-          export KUBECONFIG=/etc/kubernetes/admin.conf
-          sudo kubectl -n kube-system delete ds kube-proxy || true
-          sudo kubectl -n kube-system delete cm kube-proxy || true
-          sudo iptables-save | grep -v KUBE | sudo iptables-restore || true
-          echo "kube-proxy DaemonSet after delete (expect NotFound):"
-          sudo kubectl -n kube-system get ds kube-proxy || true
-          getent hosts apiserver.cluster.local || echo "WARNING: apiserver.cluster.local does not resolve"
 
       - name: 'Stage B - install Cilium with the exact user command'
         run: |
