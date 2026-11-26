@@ -10,9 +10,16 @@
 # NOTE (2026-11-21 finding): the two -e ExtraValues flags do NOT both
 # survive — sealos stores env in a map, so the second flag overwrites the
 # first and the CIDR list never reaches the chart. Both values are merged
-# into ONE -e flag below (the CIDR as a Helm list). The entrypoint's
-# hardcoded kubeProxyReplacement=strict was removed in the org fork, so the
-# trailing kubeProxyReplacement=true is the only value now.
+# into ONE -e flag below. The entrypoint's hardcoded
+# kubeProxyReplacement=strict was removed in the org fork, so the trailing
+# kubeProxyReplacement=true is the only value now.
+# NOTE (2026-11-26, run 45732071847): do NOT write the CIDR as a Helm list
+# ["100.64.0.0/10"] here. Sealos passes the -e value as a plain string, so
+# the brackets survive into cilium-config as the literal string
+# '[100.64.0.0/10]', and the operator's netip.ParsePrefix rejects it
+# ("unexpected character (at \"[100.64.0.0\")") — the operator then
+# CrashLoopBackOffs and never allocates a PodCIDR. Pass the bare CIDR
+# (100.64.0.0/10), exactly as in the user's original command.
 #
 # Flow: single-node 1.34.13 cluster from our rootfs image, installed with
 # the user's exact flow (sealos gen + apply, kube-proxy skipped at install
@@ -136,7 +143,7 @@ jobs:
           sudo mkdir -p /root/.kube
           sudo cp /etc/kubernetes/admin.conf /root/.kube/config
           sudo sealos run "${{ inputs.cilium_image }}:${{ inputs.cilium_version }}" \
-            -e ExtraValues=ipam.operator.clusterPoolIPv4PodCIDRList=["${{ inputs.pod_cidr }}"],kubeProxyReplacement=true \
+            -e ExtraValues=ipam.operator.clusterPoolIPv4PodCIDRList=${{ inputs.pod_cidr }},kubeProxyReplacement=true \
             --force
           echo $? > /tmp/cilium-install-rc
           echo "cilium install exit code: $(cat /tmp/cilium-install-rc)"
