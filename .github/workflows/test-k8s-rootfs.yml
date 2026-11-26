@@ -39,6 +39,10 @@ on:
         description: 'CNI version tag for stage B (calico newest labring tag 2026-11-20: v3.28.1; flannel: v0.26.0)'
         required: true
         default: 'v3.28.1'
+      cni_plugins_version:
+        description: 'labring/cni-plugins version to install before the CNI (Flannel delegates to bridge/portmap and needs the standard plugins in /opt/cni/bin; the sealos rootfs does not ship them; empty = skip). Newest labring tag: v1.6.2'
+        required: false
+        default: ''
       run_stage_b:
         description: 'Run stage B (CNI + nginx) after stage A'
         required: true
@@ -111,6 +115,12 @@ jobs:
           done
           echo "Stage A PASSED: control plane is up from our rootfs image alone"
 
+      - name: 'Stage B - install standard CNI plugins (Flannel needs bridge/portmap in /opt/cni/bin)'
+        if: inputs.run_stage_b && inputs.cni_plugins_version != ''
+        run: |
+          set -e
+          sudo sealos run "labring/cni-plugins:${{ inputs.cni_plugins_version }}"
+
       - name: 'Stage B - install CNI'
         if: inputs.run_stage_b
         run: |
@@ -141,6 +151,28 @@ jobs:
           sudo kubectl exec nginx-test -- wget -qO- http://localhost | head -c 200
           echo
           echo "Stage B PASSED: CNI works and a workload pod serves traffic"
+
+      # Diagnostics for a Stage B failure (runs even when the checks step
+      # fails, so a CoreDNS/CNI problem leaves evidence instead of a bare
+      # timeout). All commands are best-effort (|| true).
+      - name: 'Stage B diagnostics (always run)'
+        if: always() && inputs.run_stage_b
+        run: |
+          export KUBECONFIG=/etc/kubernetes/admin.conf
+          echo "=== all pods ==="
+          sudo kubectl get pods -A -o wide || true
+          echo "=== flannel pods (if installed) ==="
+          sudo kubectl -n kube-flannel get pods -o wide || true
+          sudo kubectl -n kube-flannel describe pods || true
+          sudo kubectl -n kube-flannel logs -l app=flannel --tail=50 || true
+          echo "=== CoreDNS describe (scheduling / network errors) ==="
+          sudo kubectl -n kube-system describe pod -l k8s-app=kube-dns || true
+          echo "=== /opt/cni/bin (standard plugins present?) ==="
+          ls -la /opt/cni/bin/ || echo "(no /opt/cni/bin)"
+          echo "=== CNI config ==="
+          cat /etc/cni/net.d/*.conflist /etc/cni/net.d/*.conf 2>/dev/null || echo "(no CNI config in /etc/cni/net.d)"
+          echo "=== recent events ==="
+          sudo kubectl get events -A --sort-by=.lastTimestamp | tail -n 40 || true
 
       # DIAGNOSTIC for the CNI DEL hang follow-up (containerd/containerd#14629,
       # projectcalico/calico#14696, kubernetes/kubeadm#3341): time the reset and
