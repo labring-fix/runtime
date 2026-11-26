@@ -183,8 +183,17 @@ jobs:
           sudo kubectl -n kube-system logs "$AGENT_POD" -c config --tail=50 || true
           echo "=== DIAGNOSTICS: agent container logs ==="
           sudo kubectl -n kube-system logs "$AGENT_POD" -c cilium-agent --tail=50 || true
-          echo "=== DIAGNOSTICS: operator logs ==="
-          sudo kubectl -n kube-system logs -l k8s-app=cilium-operator --tail=30 || true
+          echo "=== DIAGNOSTICS: operator pod status ==="
+          sudo kubectl -n kube-system get pods -l name=cilium-operator -o wide || true
+          echo "=== DIAGNOSTICS: operator pod describe (restart reason, events) ==="
+          sudo kubectl -n kube-system describe pod -l name=cilium-operator || true
+          echo "=== DIAGNOSTICS: operator logs (current container) ==="
+          sudo kubectl -n kube-system logs -l name=cilium-operator --tail=100 || true
+          echo "=== DIAGNOSTICS: operator logs (previous container, the crash) ==="
+          sudo kubectl -n kube-system logs -l name=cilium-operator --tail=100 --previous || true
+          echo "=== DIAGNOSTICS: CiliumNode allocation (spec.ipam.podCIDRs, set by the operator) ==="
+          sudo kubectl get ciliumnode -o wide || true
+          sudo kubectl get ciliumnode -o yaml | grep -A6 "ipam:" || echo "(no ipam section in any CiliumNode)"
           echo "=== DIAGNOSTICS: recent kube-system events ==="
           sudo kubectl get events -n kube-system --sort-by=.lastTimestamp | tail -n 40 || true
           echo "Stage B checks done"
