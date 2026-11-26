@@ -40,7 +40,7 @@ on:
         required: true
         default: 'v3.28.1'
       cni_plugins_version:
-        description: 'labring/cni-plugins version to install before the CNI (Flannel delegates to bridge/portmap and needs the standard plugins in /opt/cni/bin; the sealos rootfs does not ship them; empty = skip). Newest labring tag: v1.6.2'
+        description: 'containernetworking/plugins version to install into /opt/cni/bin before the CNI (Flannel delegates to bridge/portmap and needs the standard plugins; the sealos rootfs does not ship them; empty = skip). Installed by direct download+extract, NOT via sealos run (labring/cni-plugins fails here: its tar extraction to /opt/cni/bin dies with "Invalid cross-device link"). Example: v1.6.2'
         required: false
         default: ''
       run_stage_b:
@@ -119,7 +119,14 @@ jobs:
         if: inputs.run_stage_b && inputs.cni_plugins_version != ''
         run: |
           set -e
-          sudo sealos run "labring/cni-plugins:${{ inputs.cni_plugins_version }}"
+          # Direct download + extract. Do NOT use `sealos run labring/cni-plugins`:
+          # its tar extraction to /opt/cni/bin fails in this environment with
+          # "tar: /opt/cni/bin/: Cannot mkdir: Invalid cross-device link"
+          # (run 45742748123), so /opt/cni/bin is never created.
+          sudo mkdir -p /opt/cni/bin
+          curl -fsSL -o /tmp/cni-plugins.tgz "https://github.com/containernetworking/plugins/releases/download/${{ inputs.cni_plugins_version }}/cni-plugins-linux-amd64-${{ inputs.cni_plugins_version }}.tgz"
+          sudo tar -xzvf /tmp/cni-plugins.tgz -C /opt/cni/bin/
+          ls /opt/cni/bin/ | head -20
 
       - name: 'Stage B - install CNI'
         if: inputs.run_stage_b
