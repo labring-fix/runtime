@@ -6,10 +6,15 @@
 #     CoreDNS / any workload pod is expected to stay Pending here.
 #     Pass = kubeadm init succeeded, apiserver answers, kubelet and
 #     containerd are running, the node exists.
-#   Stage B: full cluster, after applying the calico CNI image (a separate
-#     upstream image, labring/calico). Only here do node Ready, CoreDNS
-#     Running and an nginx pod make sense. A calico failure is a calico
-#     pairing problem, not a rootfs problem, and must be reported as such.
+#   Stage B: full cluster, after applying a CNI image (a separate upstream
+#     image, selected by the cni_image input: labring/calico, labring/flannel,
+#     ...). Only here do node Ready, CoreDNS Running and an nginx pod make
+#     sense. A CNI failure is a CNI pairing problem, not a rootfs problem, and
+#     must be reported as such. NOTE (2026-11-26, kubeadm#3341): this workflow
+#     is also the reset-hang test rig — the Cleanup step times the reset and
+#     captures StopPodSandbox evidence. Flannel (local-only DEL, no API call)
+#     is the negative control: it should reset fast with 0 failures, while
+#     Calico and Cilium (DEL calls the API server) hang ~37s.
 #
 # Triggered manually only (workflow_dispatch), so a build never burns
 # runner minutes by accident. First trial target: v1.33.6-5.1.1.
@@ -26,12 +31,16 @@ on:
         description: 'Sealos version to install, e.g. 5.1.2'
         required: true
         default: '5.1.2'
-      calico_version:
-        description: 'labring/calico version for stage B (newest labring-built tag on Docker Hub, 2026-11-20: v3.28.1)'
+      cni_image:
+        description: 'CNI image for stage B, e.g. labring/calico or labring/flannel'
+        required: true
+        default: 'labring/calico'
+      cni_version:
+        description: 'CNI version tag for stage B (calico newest labring tag 2026-11-20: v3.28.1; flannel: v0.26.0)'
         required: true
         default: 'v3.28.1'
       run_stage_b:
-        description: 'Run stage B (calico + nginx) after stage A'
+        description: 'Run stage B (CNI + nginx) after stage A'
         required: true
         type: boolean
         default: true
@@ -102,11 +111,11 @@ jobs:
           done
           echo "Stage A PASSED: control plane is up from our rootfs image alone"
 
-      - name: 'Stage B - install calico (CNI)'
+      - name: 'Stage B - install CNI'
         if: inputs.run_stage_b
         run: |
           set -e
-          sudo sealos run "labring/calico:${{ inputs.calico_version }}"
+          sudo sealos run "${{ inputs.cni_image }}:${{ inputs.cni_version }}"
 
       - name: 'Stage B checks - node Ready, CoreDNS Running, nginx pod serves traffic'
         if: inputs.run_stage_b
